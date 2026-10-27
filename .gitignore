@@ -10,3 +10,6 @@ test-results/
 .vercel/
 artifacts/
 playwright-report/
+
+.vercel
+.env*

@@ -6,7 +6,9 @@ PledgeGuard stakes GEN on personal goals and uses GenLayer's decentralized AI co
 
 ## Live App
 
-Production deployment is pending verification. A confirmed URL will be added after the production HTTP checks pass.
+[https://pledgeguard-genlayer.vercel.app](https://pledgeguard-genlayer.vercel.app)
+
+Verified on October 27, 2026: an unauthenticated HEAD request returned HTTP 200, and the HTML response contained the PledgeGuard title and React root element.
 
 ## Deployed Contract
 
