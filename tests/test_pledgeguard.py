@@ -265,3 +265,20 @@ def test_other_writes_reject_accidental_value(env,method):
     with env.vm.expect_revert("Only create_pledge accepts"):
         getattr(env.c,method)("0",*([EVIDENCE,REFERENCE] if method=="submit_evidence" else []))
     env.vm.value=0
+
+
+def test_sdk_abi_and_public_surface(env):
+    from genlayer.py.get_schema import get_schema
+    instance = object.__getattribute__(env.c, "_instance")
+    schema = get_schema(type(instance))
+    methods = schema["methods"]
+    assert set(methods) == {"create_pledge", "submit_evidence", "resolve_evidence", "claim_expired_forfeit", "retry_resolution", "get_pledge", "get_pledge_count"}
+    assert methods["create_pledge"]["payable"] is True
+    assert all(not data.get("payable", False) for name,data in methods.items() if name != "create_pledge")
+    assert schema["ctor"]["params"] == []
+
+
+def test_zero_address_rejected(env):
+    from genlayer import Address
+    with env.vm.expect_revert("different nonzero"):
+        create(env,beneficiary=Address("0x"+"0"*40))

@@ -1,0 +1,14 @@
+{
+  "name": "pledgeguard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "prebuild": "node scripts/check-no-float-money.js",
+    "build": "npm --prefix frontend run build",
+    "test": "node --test tests-js/*.test.js",
+    "test:contract": "gltest tests -q --network studionet",
+    "test:ui": "npm --prefix frontend run test:ui",
+    "check": "npm test && npm run build"
+  }
+}
