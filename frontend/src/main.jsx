@@ -391,7 +391,7 @@ function App() {
             <span>
               {hash
                 ? "Transaction submitted. Waiting for AI consensus and network confirmation…"
-                : "Confirm the transaction in your wallet…"}
+                : "Preparing the transaction. Confirm in your wallet when prompted…"}
               {hash && (
                 <small className="tx-hash">
                   Hash: {hash} · If this takes too long, refresh and check the
@@ -858,6 +858,11 @@ function CreateModal({ account, busy, onClose, onConnect, onCreate }) {
           placeholder="0x… regular wallet address (EOA)"
         />
         <div className="warnings">
+          <p>
+            Studionet can retain attached GEN even when contract execution
+            fails. Creation is simulated before signing, but this does not
+            guarantee a refund if later execution fails.
+          </p>
           <p>
             <LockKeyhole size={15} />
             Your stake stays locked until resolution or expiry. The criteria,

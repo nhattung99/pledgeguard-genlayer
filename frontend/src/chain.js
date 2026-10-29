@@ -3,6 +3,12 @@ import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import { isAddress } from "viem";
 import { ensureWalletNetwork } from "./wallet.js";
+import {
+  prepareContractArgs,
+  assertSuccessfulExecution,
+  createPledgePreflight,
+  assertSuccessfulPreflight,
+} from "./transactions.js";
 
 export const contractAddress = (
   import.meta.env.VITE_CONTRACT_ADDRESS || ""
@@ -70,10 +76,26 @@ export async function sendTransaction(
     account,
     provider: window.ethereum,
   });
+  const encodedArgs = prepareContractArgs(functionName, args);
+  if (functionName === "create_pledge") {
+    try {
+      const simulation = await client.request({
+        method: "sim_call",
+        params: [
+          createPledgePreflight(account, contractAddress, encodedArgs, value),
+        ],
+      });
+      assertSuccessfulPreflight(simulation);
+    } catch (error) {
+      throw new Error(
+        `Creation preflight failed; no transaction was sent. ${error.shortMessage || error.message || "Please try again later."}`,
+      );
+    }
+  }
   const hash = await client.writeContract({
     address: contractAddress,
     functionName,
-    args,
+    args: encodedArgs,
     value,
   });
   onHash?.(hash);
@@ -84,11 +106,6 @@ export async function sendTransaction(
     retries: 100,
     fullTransaction: true,
   });
-  const leaders = receipt.consensus_data?.leader_receipt;
-  const leader = Array.isArray(leaders) ? leaders[0] : leaders;
-  if (leader?.execution_result !== "SUCCESS")
-    throw new Error(
-      `Transaction execution has not been confirmed as successful. Hash: ${hash}. ${leader?.execution_result || receipt.status || ""}`,
-    );
+  assertSuccessfulExecution(receipt, hash);
   return { hash, receipt };
 }

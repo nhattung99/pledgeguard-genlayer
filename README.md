@@ -39,6 +39,10 @@ VITE_CONTRACT_ADDRESS=0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1
 
 Without a valid address the app shows a configuration banner and disables writes. It never invents pledges or balances. Reads are public. Writes require a wallet on studionet, fixed through `genlayer-js/chains`.
 
+Before requesting a creation signature, the frontend runs a non-persistent `sim_call` against the deployed contract with the exact typed arguments, stake, and explicit UTC clock. A failed or unavailable simulation blocks submission. This reduces failed deposits, but does not guarantee later signed execution will succeed.
+
+Address arguments use SDK `CalldataAddress`, not plain strings: Python `Address` annotations do not convert calldata strings. On October 29, 2026, transaction `0x1f9e21176911ea527f3ecb513438983c6f94546fdb0fd9d50b8bcc00a361cb9c` exposed this integration bug. Execution failed while studionet still credited the attached 1 GEN to the contract, with pledge count zero. The existing contract has no withdrawal method for such unassigned deposits. An `ACCEPTED` or `FINALIZED` consensus status is not proof of successful execution or a refund.
+
 ## How It Works
 
 1. Select measurable goal criteria, a deadline, a different beneficiary wallet, and a GEN stake. Terms are immutable after creation.
