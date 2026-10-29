@@ -2,6 +2,7 @@ import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 import { TransactionStatus } from "genlayer-js/types";
 import { isAddress } from "viem";
+import { ensureWalletNetwork } from "./wallet.js";
 
 export const contractAddress = (
   import.meta.env.VITE_CONTRACT_ADDRESS || ""
@@ -44,12 +45,7 @@ export async function connectWallet() {
     method: "eth_requestAccounts",
   });
   if (!accounts[0]) throw new Error("No wallet account selected.");
-  const client = createClient({
-    chain: studionet,
-    account: accounts[0],
-    provider: window.ethereum,
-  });
-  await client.connect("studionet");
+  await ensureWalletNetwork(window.ethereum, studionet);
   return accounts[0];
 }
 export async function sendTransaction(
@@ -62,12 +58,18 @@ export async function sendTransaction(
   if (!configured) throw new Error("The contract address is not configured.");
   if (!account)
     throw new Error("Connect your wallet before signing a transaction.");
+  await ensureWalletNetwork(window.ethereum, studionet);
+  const accounts = await window.ethereum.request({ method: "eth_accounts" });
+  if (
+    !accounts.some((address) => address.toLowerCase() === account.toLowerCase())
+  ) {
+    throw new Error("Your wallet account changed. Reconnect before signing.");
+  }
   const client = createClient({
     chain: studionet,
     account,
     provider: window.ethereum,
   });
-  await client.connect("studionet");
   const hash = await client.writeContract({
     address: contractAddress,
     functionName,

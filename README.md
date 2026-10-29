@@ -21,6 +21,8 @@ Studionet is a development environment. Deployment alone does not verify escrow 
 
 ## Run Locally
 
+For a prepared example with form values, a report outline, evidence links, and all three transaction steps, read [Complete your first pledge](docs/FIRST_PLEDGE.md).
+
 Requirements: Node.js 22.12 or later, Python 3.12 for tests, and MetaMask for signed transactions.
 
 ```powershell
