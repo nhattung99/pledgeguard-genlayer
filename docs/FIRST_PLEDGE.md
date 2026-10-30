@@ -77,7 +77,7 @@ In your pledge, paste those URLs into **Deliverable link 1** and **Timestamp ref
 
 ## Transaction 3: request AI review
 
-For the October 30 steward revision, the contract must first be manually redeployed and the frontend pointed to its new address. The previous deployment does not gain the new timeout path from a source update.
+The steward revision is manually deployed at `0xA487292723C29E7262b6858F0B98B5F77a559EdD`. Confirm that you are using this address. The previous deployment does not gain the new timeout path from a source update.
 
 Click **Request AI review**, sign, and wait for consensus. Read the verdict and reason:
 

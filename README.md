@@ -12,11 +12,11 @@ Verified on October 27, 2026: an unauthenticated HEAD request returned HTTP 200,
 
 ## Deployed Contract
 
-**Steward revision, October 30, 2026:** the repository source now adds bounded review timeout recovery and confidence-gate consensus. The address below is the **legacy deployment** and does not contain these changes. A new manual Studio deployment and frontend environment update are required. Existing pledges and funds do not automatically migrate.
+**Steward revision:** the new manually deployed address below was verified byte-for-byte against the corrected source. It implements bounded review timeout recovery and confidence-gate consensus. The legacy address `0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1` remains separate; existing pledges and funds do not automatically migrate.
 
 - Network: **GenLayer studionet**, chain ID **61999**.
-- Address: `0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1`.
-- Explorer: [View the deployed contract](https://genlayer-explorer.vercel.app/address/0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1).
+- Address: `0xA487292723C29E7262b6858F0B98B5F77a559EdD`.
+- Explorer: [View the deployed contract](https://explorer-studio.genlayer.com/address/0xA487292723C29E7262b6858F0B98B5F77a559EdD).
 - The project owner deployed the contract manually. This repository does not automatically deploy contracts.
 
 Studionet is a development environment. Deployment alone does not verify escrow transfers, AI accuracy, or recipient balances.
@@ -36,7 +36,7 @@ npm run dev
 Set `frontend/.env` and restart Vite:
 
 ```dotenv
-VITE_CONTRACT_ADDRESS=0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1
+VITE_CONTRACT_ADDRESS=0xA487292723C29E7262b6858F0B98B5F77a559EdD
 ```
 
 Without a valid address the app shows a configuration banner and disables writes. It never invents pledges or balances. Reads are public. Writes require a wallet on studionet, fixed through `genlayer-js/chains`.

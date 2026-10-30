@@ -16,7 +16,7 @@ Verification: `npm run test:contract` passed **68 tests** using the pinned SDK a
 
 ## Deployment status — do not omit from the submission
 
-The previously submitted address `0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1` is immutable and still runs the old source. A new manual studionet deployment is required. After Studio confirms `Result: SUCCESS`, replace the submission's contract link and update the frontend environment to the new address. Do not describe the old address as patched. Existing funds and pledges do not migrate automatically.
+The corrected contract has been manually deployed to `0xA487292723C29E7262b6858F0B98B5F77a559EdD` on studionet, and its deployed source was verified byte-for-byte against this revision. Explorer: https://explorer-studio.genlayer.com/address/0xA487292723C29E7262b6858F0B98B5F77a559EdD. The previously submitted address `0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1` remains unchanged. Existing funds and pledges do not migrate automatically.
 
 ## Rule and boundary details
 
