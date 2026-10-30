@@ -12,6 +12,8 @@ Verified on October 27, 2026: an unauthenticated HEAD request returned HTTP 200,
 
 ## Deployed Contract
 
+**Steward revision, October 30, 2026:** the repository source now adds bounded review timeout recovery and confidence-gate consensus. The address below is the **legacy deployment** and does not contain these changes. A new manual Studio deployment and frontend environment update are required. Existing pledges and funds do not automatically migrate.
+
 - Network: **GenLayer studionet**, chain ID **61999**.
 - Address: `0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1`.
 - Explorer: [View the deployed contract](https://genlayer-explorer.vercel.app/address/0xB8846C0e42778fc7aCFd1470Ead7a149AE8a4aa1).
@@ -47,8 +49,8 @@ Address arguments use SDK `CalldataAddress`, not plain strings: Python `Address`
 
 1. Select measurable goal criteria, a deadline, a different beneficiary wallet, and a GEN stake. Terms are immutable after creation.
 2. Create new public work within `[created_at, deadline]`. Submit deliverable links and platform timestamp references before expiry, at most three times.
-3. Anyone can request AI review. The leader fetches evidence and checks every criterion. Validators rerun the evaluation and compare the binary verdict with exact equality.
-4. A confident `KEPT` emits a refund. `BROKEN` allows resubmission while time and attempts remain; otherwise the beneficiary receives the stake. Anyone can settle expired pledges awaiting evidence or disputed.
+3. Anyone can request AI review. The leader fetches evidence and checks every criterion. Validators must agree exactly on both the binary verdict and whether confidence is at least 60. Confidence numbers may differ only within the same threshold bucket; this cannot change a settlement decision.
+4. A confident `KEPT` emits a refund. `BROKEN` allows resubmission while time and attempts remain; otherwise the beneficiary receives the stake. Anyone can settle expired pledges awaiting evidence or disputed. Unresolved `SUBMITTED` pledges can be forfeited after a fixed 24-hour review grace period following their deadline, without web access or AI.
 
 ```text
 create_pledge + GEN -> AWAITING_EVIDENCE
@@ -60,11 +62,20 @@ resolve_evidence:
   BROKEN, no attempts or deadline passed -> RESOLVED_BROKEN
 claim_expired_forfeit:
   expired AWAITING_EVIDENCE / DISPUTED -> EXPIRED_FORFEITED
+  SUBMITTED after deadline + 24 hours -> EXPIRED_FORFEITED without web/AI
+resolve_evidence after the same review timeout:
+  SUBMITTED -> the identical deterministic expiry path without web/AI
 Synchronous payout emission exception -> PAYOUT_FAILED
 retry_resolution -> saved recipient and success status, without AI
 ```
 
-On-time `SUBMITTED` evidence must be reviewed even after expiry. Submission is allowed at the exact deadline second; forfeiture requires `now > deadline`. Low confidence on a final attempt remains disputed until expiry. Confidence is leader metadata, not a success probability or the percentage of agreeing validators.
+On-time `SUBMITTED` evidence remains eligible for review through `deadline + 86,400 seconds`, inclusive. Fetch failures revert cleanly and can be retried during that period. Once `now` is strictly greater than the review timeout, either `claim_expired_forfeit` or `resolve_evidence` takes the deterministic expiry path. No URL fetch, LLM call, or successful consensus round is needed for this path. Anyone may call it; it requires a transaction and is not an automatic scheduled task. It preserves payout intent and uses the normal settlement/retry helpers.
+
+Submission is allowed at the exact deadline second. For ordinary `AWAITING_EVIDENCE` and `DISPUTED` pledges, forfeiture requires `now > deadline`. Low confidence on a final attempt remains disputed until expiry. Confidence is not a success probability or percentage of agreeing validators, but its `< 60` versus `>= 60` gate controls settlement and is therefore validated along with the verdict. Raw confidence and reason are accepted leader metadata within that agreed gate.
+
+Timeout forfeiture does not invent a `BROKEN` AI verdict: verdict stays empty, the deterministic reason and settlement intent are recorded in submission history, and the beneficiary is fixed by the pledge. Synchronous emission failures still become `PAYOUT_FAILED` and retry uses the saved beneficiary without AI. The asynchronous delivery limitation below remains unchanged.
+
+The revised view exposes `review_timeout_at`. The prepared frontend shows its cutoff and timeout-settlement action only when the deployed contract returns that field, so legacy `SUBMITTED` pledges are not offered an unsupported recovery action. See [the steward response and verification notes](docs/STEWARD_RESPONSE.md).
 
 Attempts are counted on submission. Public history preserves every submission, reference, timestamp, and result. All payout branches save recipient intent before invoking one settlement helper. There is no method to change criteria, beneficiary, stake, creation time, or deadline.
 
@@ -80,7 +91,7 @@ Limits: title 160 characters; criteria 4,000 characters; one to three HTTPS deli
 
 1. This is **a motivation tool, not a fraud-proof system**. Pledgers control their submissions and may fabricate evidence. Platform timestamps, the valid window, three-attempt limit, and burden of proof reduce but do not eliminate this risk.
 2. **The beneficiary loses out if a pledger cheats.** Choose someone who can independently review the work. All submitted evidence is public.
-3. AI can only inspect **public work readable through `web.render`**. Private pages, login walls, and automation blocks may cause fetch failures and transaction reverts. Objective, measurable criteria are more reliable.
+3. AI can only inspect **public work readable through `web.render`**. Private pages, login walls, and automation blocks may cause fetch failures and transaction reverts. In the revised contract, unresolved submissions have the deterministic post-deadline timeout path described above. Objective, measurable criteria are more reliable.
 4. A beneficiary contract that cannot receive funds may cause repeated failures and trapped funds. **Use a regular wallet address (EOA).** There is no pledger withdrawal escape hatch, since it would enable avoiding the penalty.
 5. Prompt-injection defenses only reduce risk.
 6. Criteria, deadline, and beneficiary cannot be changed after creation. Funds remain locked until resolution or expiry settlement.
@@ -150,7 +161,7 @@ Contract tests use real gltest 0.29.2, SDK v0.2.16, and SDK storage in **direct 
 
 The fixture compensates for installed runner defects: the old EOAProxy `_vm` alias, raw-message clock refresh on `warp`, and nondeterministic context during `run_validator`. It does not modify the contract or installed SDK. The parser handles raw JSON and dictionaries because the mock runner automatically parses JSON. Direct mode does not fully simulate escrow debits, gas, rollback, message queues, finality, or multi-node consensus. Mock recipient-credit assertions are not proof of network transfers.
 
-Coverage includes refunds, failed attempts, resubmission, final failure, attempt limits, expiry and deadline boundaries, unauthorized submissions, low confidence, immutable terms, invalid input, public ABI, prompt security and timestamps, exact verdict comparison, double resolution, accidental value, and three payout-failure/retry paths.
+Coverage includes refunds, failed attempts, resubmission, final failure, attempt limits, expiry and review-grace boundaries, unauthorized submissions, low confidence, immutable terms, invalid input, public ABI, prompt security and timestamps, exact verdict and confidence-gate comparison, double resolution, accidental value, and payout-failure/retry paths. Steward regression tests cover unavailable evidence and reference URLs, repeated fetch failures, recovery through both expiry entry points with web/AI prohibited, validator verdict/gate/render disagreement without any state or money change, malformed JSON recovery, and synchronous timeout-payout failure followed by retry.
 
 ## Deployment
 

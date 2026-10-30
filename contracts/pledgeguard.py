@@ -10,6 +10,12 @@ MAX_ATTEMPTS = 3
 MIN_DURATION = 3600
 MAX_DURATION = 31622400
 MAX_URLS = 3
+MIN_SETTLEMENT_CONFIDENCE = 60
+SUBMITTED_REVIEW_GRACE = 86400  # 24 hours after the immutable work deadline
+
+
+def _settlement_eligible(result: dict) -> bool:
+    return result["confidence"] >= MIN_SETTLEMENT_CONFIDENCE
 
 
 def _current_unix_timestamp() -> u256:
@@ -153,6 +159,9 @@ class Contract(gl.Contract):
         p = self._pledge(pledge_id)
         if p.status != "SUBMITTED":
             raise gl.vm.UserError(f"Pledge not ready for resolution (status: {p.status})")
+        if _current_unix_timestamp() > p.deadline + u256(SUBMITTED_REVIEW_GRACE):
+            self._expire_unresolved_submission(pledge_id)
+            return
         title, criteria = p.commitment_title, p.success_criteria
         created_iso, deadline_iso = _iso_utc(p.created_at), _iso_utc(p.deadline)
         evidence_list, reference_list = list(p.evidence_urls), list(p.reference_urls)
@@ -192,7 +201,8 @@ Rules:
 - BURDEN OF PROOF is on the pledger. Reference timestamps must belong to the same submitted work.
 - KEPT: the verified work satisfies EVERY point of the locked success criteria.
 - BROKEN: any criterion is unmet, unverifiable, outside the window, or evidence is insufficient.
-- Confidence is metadata only. Return an integer from 0 to 100.
+- Return confidence as an integer from 0 to 100. Confidence below 60 prevents settlement
+  and marks the result as disputed. Validators must agree on the verdict and this threshold decision.
 Return ONLY raw JSON, no markdown:
 {{"verdict":"KEPT or BROKEN","confidence":90,"reason":"short justification naming each criterion met or missed"}}'''
             return _parse_verdict(gl.nondet.exec_prompt(prompt), ["KEPT", "BROKEN"])
@@ -202,7 +212,11 @@ Return ONLY raw JSON, no markdown:
                 return False
             try:
                 my_res = leader_fn()
-                return my_res["verdict"] == leader_res.calldata["verdict"]
+                leader = leader_res.calldata
+                return (
+                    my_res["verdict"] == leader["verdict"]
+                    and _settlement_eligible(my_res) == _settlement_eligible(leader)
+                )
             except Exception:
                 return False
 
@@ -212,7 +226,7 @@ Return ONLY raw JSON, no markdown:
         history = json.loads(p.submission_history[-1])
         history["verdict"], history["reason"], history["confidence"] = p.verdict, p.verdict_reason, int(p.confidence)
         p.submission_history[-1] = json.dumps(history)
-        if result["confidence"] < 60:
+        if not _settlement_eligible(result):
             p.status = "DISPUTED"
             self.pledges[pledge_id] = p
             return
@@ -231,10 +245,32 @@ Return ONLY raw JSON, no markdown:
     def claim_expired_forfeit(self, pledge_id: str) -> None:
         self._no_value()
         p = self._pledge(pledge_id)
+        if p.status == "SUBMITTED":
+            self._expire_unresolved_submission(pledge_id)
+            return
         if p.status not in ["AWAITING_EVIDENCE", "DISPUTED"]:
             raise gl.vm.UserError(f"Forfeit not available in status: {p.status}")
         if _current_unix_timestamp() <= p.deadline:
             raise gl.vm.UserError("Deadline has not passed yet")
+        self._settle(pledge_id, False, "EXPIRED_FORFEITED")
+
+    def _expire_unresolved_submission(self, pledge_id: str) -> None:
+        p = self._pledge(pledge_id)
+        if p.status != "SUBMITTED":
+            raise gl.vm.UserError("Only unresolved SUBMITTED pledges can time out")
+        if _current_unix_timestamp() <= p.deadline + u256(SUBMITTED_REVIEW_GRACE):
+            raise gl.vm.UserError("The submitted review window has not expired yet")
+        # No web access, AI call or caller-supplied outcome is involved. Do not
+        # fabricate an AI verdict when rendering or consensus never succeeded.
+        p.verdict = ""
+        p.confidence = u256(0)
+        p.verdict_reason = "No agreed verdict before the deadline plus 24-hour review grace period; deterministic expiry forfeiture."
+        history = json.loads(p.submission_history[-1])
+        history["settlement_intent"] = "EXPIRED_FORFEITED"
+        history["resolution_reason"] = p.verdict_reason
+        history["resolved_at"] = int(_current_unix_timestamp())
+        p.submission_history[-1] = json.dumps(history)
+        self.pledges[pledge_id] = p
         self._settle(pledge_id, False, "EXPIRED_FORFEITED")
 
     def _settle(self, pledge_id: str, to_pledger: bool, success_status: str) -> None:
@@ -272,6 +308,7 @@ Return ONLY raw JSON, no markdown:
         return {"pledger": p.pledger, "beneficiary": p.beneficiary,
                 "commitment_title": p.commitment_title, "success_criteria": p.success_criteria,
                 "stake_amount": p.stake_amount, "created_at": p.created_at, "deadline": p.deadline,
+                "review_timeout_at": p.deadline + u256(SUBMITTED_REVIEW_GRACE),
                 "evidence_urls": list(p.evidence_urls), "reference_urls": list(p.reference_urls),
                 "submission_history": list(p.submission_history), "attempts_used": p.attempts_used,
                 "status": p.status, "verdict": p.verdict, "verdict_reason": p.verdict_reason,

@@ -31,6 +31,7 @@ import {
 import { parseGenToWei, formatWeiToGen } from "./money.js";
 import { categories, buildCriteria } from "./criteria.js";
 import "./style.css";
+import { canClaimExpiry } from "./pledge-state.js";
 
 const short = (a) =>
   a ? `${String(a).slice(0, 6)}…${String(a).slice(-4)}` : "Not connected";
@@ -934,6 +935,8 @@ function DetailModal({ p, now, account, busy, transact, onClose }) {
     [error, setError] = useState("");
   const mine = String(p.pledger).toLowerCase() === account.toLowerCase(),
     expired = now > Number(p.deadline),
+    canExpire = canClaimExpiry(p, now),
+    reviewTimedOut = p.status === "SUBMITTED" && canExpire,
     canSubmit =
       mine &&
       !expired &&
@@ -984,9 +987,21 @@ function DetailModal({ p, now, account, busy, transact, onClose }) {
         <dd>
           {date(p.created_at)} → {date(p.deadline)}
         </dd>
+        {p.review_timeout_at !== undefined && (
+          <>
+            <dt>Review timeout</dt>
+            <dd>
+              {date(p.review_timeout_at)} · Unresolved submissions can be
+              forfeited after this time.
+            </dd>
+          </>
+        )}
       </dl>
       <h3>Locked criteria</h3>
       <pre className="locked-criteria">{p.success_criteria}</pre>
+      {!p.verdict && p.verdict_reason && (
+        <p className="form-hint">{p.verdict_reason}</p>
+      )}
       {p.verdict && (
         <div className="verdict">
           <strong>
@@ -1094,11 +1109,13 @@ function DetailModal({ p, now, account, busy, transact, onClose }) {
           </button>
         </form>
       )}
-      {p.status === "SUBMITTED" && (
+      {p.status === "SUBMITTED" && !reviewTimedOut && (
         <div className="action-block">
           <p>
             Anyone can request AI review. Evidence submitted on time can still
             be reviewed after the deadline.
+            {p.review_timeout_at !== undefined &&
+              " Review is limited to the 24-hour grace period. If URLs remain unavailable or consensus never succeeds, anyone can settle for the beneficiary after the review timeout."}
           </p>
           <button
             className="primary"
@@ -1110,11 +1127,14 @@ function DetailModal({ p, now, account, busy, transact, onClose }) {
           </button>
         </div>
       )}
-      {expired && ["AWAITING_EVIDENCE", "DISPUTED"].includes(p.status) && (
+      {canExpire && (
         <div className="action-block">
           <p>
-            The deadline has passed. The entire {formatWeiToGen(p.stake_amount)}{" "}
-            GEN will be sent to {String(p.beneficiary)}.
+            {reviewTimedOut
+              ? "The review grace period has expired without an agreed verdict."
+              : "The deadline has passed."}{" "}
+            The entire {formatWeiToGen(p.stake_amount)} GEN will be sent to{" "}
+            {String(p.beneficiary)}.
           </p>
           <button
             className="primary"

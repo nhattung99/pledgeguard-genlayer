@@ -126,7 +126,7 @@ def test_third_disputed_blocks_fourth_until_expiry(env):
 
 def test_on_time_submission_resolves_after_deadline(env):
     e = env; create(e); submit(e); e.vm.warp(iso(START+86401))
-    with e.vm.expect_revert("Forfeit not available"):
+    with e.vm.expect_revert("review window has not expired"):
         e.c.claim_expired_forfeit("0")
     mocks(e,"BROKEN"); e.c.resolve_evidence("0")
     assert state(e)["status"] == "RESOLVED_BROKEN"
@@ -282,3 +282,132 @@ def test_zero_address_rejected(env):
     from genlayer import Address
     with env.vm.expect_revert("different nonzero"):
         create(env,beneficiary=Address("0x"+"0"*40))
+
+
+@pytest.mark.parametrize("unavailable", ["evidence", "reference"])
+@pytest.mark.parametrize("entrypoint", ["claim_expired_forfeit", "resolve_evidence"])
+def test_unavailable_url_has_permissionless_deterministic_timeout(env, unavailable, entrypoint):
+    e = env; create(e); submit(e); mocks(e)
+    import genlayer.gl as gl
+    original_render = gl.nondet.web.render
+    failed_url = EVIDENCE[0] if unavailable == "evidence" else REFERENCE[0]
+    def unavailable_render(url):
+        if url == failed_url:
+            raise RuntimeError("Page unavailable")
+        return original_render(url)
+    before = state(e)
+    balances = dict(e.vm._balances)
+    with patch.object(gl.nondet.web, "render", side_effect=unavailable_render):
+        for _ in range(2):
+            with e.vm.expect_revert(f"Failed to fetch {unavailable}"):
+                e.c.resolve_evidence("0")
+    assert state(e) == before
+    assert e.vm._balances == balances
+    # Neither ordinary expiry nor the exact grace boundary can bypass on-time evidence.
+    for timestamp in [START + 86401, START + 86400 + 86400]:
+        e.vm.warp(iso(timestamp))
+        with e.vm.expect_revert("review window has not expired"):
+            e.c.claim_expired_forfeit("0")
+    e.vm.warp(iso(START + 86400 + 86400 + 1))
+    e.vm.sender = e.stranger
+    with patch.object(gl.nondet.web, "render", side_effect=AssertionError("No web allowed")), patch.object(gl.nondet, "exec_prompt", side_effect=AssertionError("No AI allowed")):
+        getattr(e.c, entrypoint)("0")
+    p = state(e)
+    assert p["status"] == "EXPIRED_FORFEITED" and p["settled"]
+    assert p["verdict"] == ""  # Expiry is not a fabricated AI BROKEN verdict.
+    assert p["attempts_used"] == 1
+    assert e.vm._balances[e.vm._to_bytes(e.bob)] - balances.get(e.vm._to_bytes(e.bob), 0) == STAKE
+    history = json.loads(p["submission_history"][0])
+    assert history["evidence_urls"] == EVIDENCE and history["reference_urls"] == REFERENCE
+    assert history["settlement_intent"] == "EXPIRED_FORFEITED"
+    paid_balances = dict(e.vm._balances)
+    with e.vm.expect_revert():
+        getattr(e.c, entrypoint)("0")
+    assert e.vm._balances == paid_balances
+
+
+def test_submitted_timeout_emission_failure_preserves_intent_for_retry(env):
+    e = env; create(e); submit(e)
+    from gltest.direct.loader import _EOAProxy
+    e.vm.warp(iso(START + 172801)); e.vm.sender = e.stranger
+    with patch.object(_EOAProxy, "emit_transfer", side_effect=RuntimeError("rejected")):
+        e.c.claim_expired_forfeit("0")
+    assert state(e)["status"] == "PAYOUT_FAILED"
+    assert state(e)["settle_success_status"] == "EXPIRED_FORFEITED"
+    assert state(e)["settle_to_pledger"] is False
+    e.c.retry_resolution("0")
+    assert state(e)["status"] == "EXPIRED_FORFEITED"
+    assert e.vm._balances[e.vm._to_bytes(e.bob)] == STAKE
+
+
+@pytest.mark.parametrize("confidence", [59, 60, 100])
+def test_review_allowed_at_exact_grace_boundary(env, confidence):
+    e = env; create(e); submit(e); mocks(e, "KEPT", confidence)
+    assert state(e)["review_timeout_at"] == START + 172800
+    e.vm.warp(iso(START + 172800)); e.c.resolve_evidence("0")
+    assert state(e)["status"] == ("DISPUTED" if confidence < 60 else "RESOLVED_KEPT")
+
+
+@pytest.mark.parametrize("verdict", ["KEPT", "BROKEN"])
+@pytest.mark.parametrize("leader_confidence, validator_confidence, agrees", [
+    (59, 60, False), (60, 59, False), (0, 100, False),
+    (60, 100, True), (100, 60, True), (0, 59, True),
+])
+def test_validator_compares_exact_verdict_and_confidence_gate(env, verdict, leader_confidence, validator_confidence, agrees):
+    e = env; create(e); submit(e); mocks(e, verdict, leader_confidence)
+    e.c.resolve_evidence("0")
+    mocks(e, verdict, validator_confidence)
+    assert validate(e) is agrees
+
+
+@pytest.mark.parametrize("leader_verdict, validator_verdict", [("KEPT", "BROKEN"), ("BROKEN", "KEPT")])
+def test_validator_rejects_different_verdict_even_with_same_gate(env, leader_verdict, validator_verdict):
+    e = env; create(e); submit(e); mocks(e, leader_verdict, 90)
+    e.c.resolve_evidence("0")
+    mocks(e, validator_verdict, 90)
+    assert validate(e) is False
+
+
+@pytest.mark.parametrize("disagreement", ["confidence", "verdict", "reference"])
+@pytest.mark.parametrize("leader_verdict", ["KEPT", "BROKEN"])
+def test_rejected_consensus_keeps_state_and_money_then_timeout_recovers(env, disagreement, leader_verdict):
+    e = env; create(e)
+    # At the final attempt either confident outcome would release funds, to
+    # different recipients. Disagreement must block both payout directions.
+    for _ in range(2):
+        submit(e); mocks(e, "BROKEN", 90); e.c.resolve_evidence("0")
+    submit(e); mocks(e, leader_verdict, 90)
+    import genlayer.gl as gl
+    before = state(e); balances = dict(e.vm._balances)
+    def require_consensus(leader_fn, validator_fn):
+        e.vm._in_nondet = True
+        try:
+            result = leader_fn()
+            if disagreement == "confidence":
+                mocks(e, leader_verdict, 59)
+            elif disagreement == "verdict":
+                mocks(e, "BROKEN" if leader_verdict == "KEPT" else "KEPT", 90)
+            else:
+                e.vm.clear_mocks()
+                e.vm.mock_web("example.com", "data")  # Reference unavailable to validator.
+            if not validator_fn(gl.vm.Return(calldata=result)):
+                raise gl.vm.UserError("Validator rejected settlement decision")
+            return result
+        finally:
+            e.vm._in_nondet = False
+    with patch.object(gl.vm, "run_nondet", side_effect=require_consensus):
+        with e.vm.expect_revert("Validator rejected"):
+            e.c.resolve_evidence("0")
+    assert state(e) == before and e.vm._balances == balances
+    e.vm.clear_mocks(); e.vm.warp(iso(START + 172801))
+    e.c.claim_expired_forfeit("0")
+    assert state(e)["status"] == "EXPIRED_FORFEITED"
+
+
+def test_invalid_json_submission_also_has_timeout_path(env):
+    e = env; create(e); submit(e); mocks(e, raw="not json")
+    with e.vm.expect_revert("Invalid LLM verdict"):
+        e.c.resolve_evidence("0")
+    e.vm.warp(iso(START + 172801)); e.vm.sender = e.stranger
+    e.c.claim_expired_forfeit("0")
+    assert state(e)["status"] == "EXPIRED_FORFEITED"

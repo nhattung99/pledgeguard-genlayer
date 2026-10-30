@@ -12,15 +12,15 @@ This example uses a new public focus-session report as one original deliverable.
 
 Use these form values:
 
-| Field | Value |
-| --- | --- |
-| Pledge title | Publish my first public focus-session report |
-| Category | Other |
-| At least | 1 deliverable |
-| Optional criteria | Leave both unchecked |
-| Deadline | 1 day |
-| Stake | 0.1 GEN |
-| Beneficiary | Your chosen different EOA wallet address |
+| Field             | Value                                        |
+| ----------------- | -------------------------------------------- |
+| Pledge title      | Publish my first public focus-session report |
+| Category          | Other                                        |
+| At least          | 1 deliverable                                |
+| Optional criteria | Leave both unchecked                         |
+| Deadline          | 1 day                                        |
+| Stake             | 0.1 GEN                                      |
+| Beneficiary       | Your chosen different EOA wallet address     |
 
 Review the generated English criteria, acknowledge the stake lock, click **Lock GEN & create pledge**, and sign. Wait for confirmation. Open the new pledge and record its creation time and deadline **before starting the work**.
 
@@ -36,21 +36,26 @@ Copy this outline and replace every bracketed field with real information produc
 # My first focus-session report
 
 ## Session
+
 - Pledge ID: [actual pledge ID]
 - Start time in UTC: [actual start time after pledge creation]
 - End time in UTC: [actual end time before the deadline]
 - Goal: [what I set out to complete]
 
 ## What I completed
+
 [Describe the work in your own words. Include specific results.]
 
 ## My public-evidence checklist
+
 [Write the checklist you developed during this session.]
 
 ## What I learned
+
 [Explain at least three concrete observations from your work.]
 
 ## Outcome and next step
+
 [Explain what you finished and what you will do next.]
 ```
 
@@ -72,11 +77,15 @@ In your pledge, paste those URLs into **Deliverable link 1** and **Timestamp ref
 
 ## Transaction 3: request AI review
 
+For the October 30 steward revision, the contract must first be manually redeployed and the frontend pointed to its new address. The previous deployment does not gain the new timeout path from a source update.
+
 Click **Request AI review**, sign, and wait for consensus. Read the verdict and reason:
 
 - Confident `KEPT`: the contract emits a refund to the pledger.
 - `BROKEN` with time and attempts left: improve the actual work and submit again.
 - Low confidence: provide stronger evidence if another attempt is available.
 - Final failure or expired forfeiture: the beneficiary receives the stake according to the contract rules.
+
+If an evidence/reference URL cannot render, resolution can revert and remain retryable. For the revised contract, review stays open through the displayed review timeout, 24 hours after the work deadline. After that cutoff, anyone can use **Settle expired pledge** to emit the beneficiary payout without loading URLs or calling AI. `resolve_evidence` uses the same deterministic expiry path after the cutoff. This is an expiry rule, not a successful AI review. Validators must agree on the verdict and whether confidence reaches 60 before an AI result can control settlement.
 
 `settled` means a payout message was emitted. Check the child transaction and recipient balance to confirm the credit; a parent verdict alone is insufficient. The app's **Retry payout** action handles synchronous emission failures only. See the README for asynchronous payout limitations.
